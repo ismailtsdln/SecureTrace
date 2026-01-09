@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -14,6 +15,21 @@ import (
 	"github.com/ismailtasdelen/securetrace/internal/reporter"
 	"github.com/ismailtasdelen/securetrace/internal/tracer"
 	"github.com/ismailtasdelen/securetrace/pkg/types"
+)
+
+// ANSI color codes
+const (
+	colorReset   = "\033[0m"
+	colorBold    = "\033[1m"
+	colorDim     = "\033[2m"
+	colorRed     = "\033[31m"
+	colorGreen   = "\033[32m"
+	colorYellow  = "\033[33m"
+	colorBlue    = "\033[34m"
+	colorMagenta = "\033[35m"
+	colorCyan    = "\033[36m"
+	colorWhite   = "\033[37m"
+	colorBgBlue  = "\033[44m"
 )
 
 // CLI flags
@@ -30,11 +46,16 @@ var (
 	noColor     bool
 	concurrency int
 	retries     int
+	useColors   bool
 )
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		if useColors {
+			fmt.Fprintf(os.Stderr, "%s✗ Error:%s %v\n", colorRed, colorReset, err)
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		}
 		os.Exit(1)
 	}
 }
@@ -42,6 +63,7 @@ func main() {
 func run() error {
 	// Parse arguments
 	args := os.Args[1:]
+	useColors = isTerminal()
 
 	// Handle help and version
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
@@ -49,7 +71,7 @@ func run() error {
 		return nil
 	}
 
-	if args[0] == "version" || args[0] == "-v" || args[0] == "--version" {
+	if args[0] == "version" || args[0] == "-V" || args[0] == "--version" {
 		printVersion()
 		return nil
 	}
@@ -120,6 +142,7 @@ func run() error {
 			continue
 		case arg == "--no-color":
 			noColor = true
+			useColors = false
 			i++
 			continue
 		case arg == "--config":
@@ -153,6 +176,7 @@ func run() error {
 		retries = 3
 	}
 	followRedir = true // Default to following redirects unless --no-redirect
+	verifyTLS = true   // Default to verify TLS
 
 	// Setup logger
 	if verbose {
@@ -160,6 +184,7 @@ func run() error {
 	}
 	if noColor {
 		logger.SetColored(false)
+		useColors = false
 	}
 
 	// Load config
@@ -191,6 +216,11 @@ func run() error {
 		return fmt.Errorf("no URLs provided. Usage: securetrace [options] <url> [url...]")
 	}
 
+	// Print banner for text output
+	if outputFmt == "text" && isTerminal() {
+		printBanner()
+	}
+
 	// Setup context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -200,7 +230,11 @@ func run() error {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigChan
-		fmt.Println("\nInterrupted, cleaning up...")
+		if useColors {
+			fmt.Printf("\n%s⚠ Interrupted, cleaning up...%s\n", colorYellow, colorReset)
+		} else {
+			fmt.Println("\nInterrupted, cleaning up...")
+		}
 		cancel()
 	}()
 
@@ -209,8 +243,15 @@ func run() error {
 	defer t.Close()
 
 	// Get reporter
-	colored := !noColor && isTerminal()
+	colored := useColors && !noColor
 	rep := reporter.GetReporter(reporter.ParseFormat(outputFmt), colored)
+
+	// Show progress for text output
+	var spinner *Spinner
+	if outputFmt == "text" && isTerminal() {
+		spinner = NewSpinner("Analyzing")
+		spinner.Start()
+	}
 
 	// Perform trace(s)
 	var output []byte
@@ -218,14 +259,26 @@ func run() error {
 
 	if len(urls) == 1 {
 		// Single URL trace
+		if spinner != nil {
+			spinner.SetMessage(fmt.Sprintf("Tracing %s", truncateURL(urls[0], 50)))
+		}
 		result, traceErr := t.Trace(ctx, urls[0])
+		if spinner != nil {
+			spinner.Stop()
+		}
 		if traceErr != nil && result == nil {
 			return traceErr
 		}
 		output, err = rep.Format(result)
 	} else {
 		// Multiple URLs - concurrent scan
+		if spinner != nil {
+			spinner.SetMessage(fmt.Sprintf("Scanning %d targets", len(urls)))
+		}
 		result := t.TraceMultiple(ctx, urls, concurrency)
+		if spinner != nil {
+			spinner.Stop()
+		}
 		output, err = rep.FormatScan(result)
 	}
 
@@ -238,7 +291,11 @@ func run() error {
 		if err := os.WriteFile(outputFile, output, 0644); err != nil {
 			return fmt.Errorf("failed to write output file: %w", err)
 		}
-		fmt.Printf("Report saved to: %s\n", outputFile)
+		if useColors {
+			fmt.Printf("%s✓ Report saved to:%s %s\n", colorGreen, colorReset, outputFile)
+		} else {
+			fmt.Printf("Report saved to: %s\n", outputFile)
+		}
 	} else {
 		fmt.Print(string(output))
 	}
@@ -246,14 +303,135 @@ func run() error {
 	return nil
 }
 
+func printBanner() {
+	if useColors {
+		fmt.Printf(`
+%s╔═══════════════════════════════════════════════════════════════╗%s
+%s║%s  %s███████╗███████╗ ██████╗██╗   ██╗██████╗ ███████╗%s            %s║%s
+%s║%s  %s██╔════╝██╔════╝██╔════╝██║   ██║██╔══██╗██╔════╝%s            %s║%s
+%s║%s  %s███████╗█████╗  ██║     ██║   ██║██████╔╝█████╗%s              %s║%s
+%s║%s  %s╚════██║██╔══╝  ██║     ██║   ██║██╔══██╗██╔══╝%s              %s║%s
+%s║%s  %s███████║███████╗╚██████╗╚██████╔╝██║  ██║███████╗%s            %s║%s
+%s║%s  %s╚══════╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝%s            %s║%s
+%s║%s                                                               %s║%s
+%s║%s  %s████████╗██████╗  █████╗  ██████╗███████╗%s                   %s║%s
+%s║%s  %s╚══██╔══╝██╔══██╗██╔══██╗██╔════╝██╔════╝%s                   %s║%s
+%s║%s  %s   ██║   ██████╔╝███████║██║     █████╗%s                     %s║%s
+%s║%s  %s   ██║   ██╔══██╗██╔══██║██║     ██╔══╝%s                     %s║%s
+%s║%s  %s   ██║   ██║  ██║██║  ██║╚██████╗███████╗%s                   %s║%s
+%s║%s  %s   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚══════╝%s                   %s║%s
+%s║%s                                                               %s║%s
+%s║%s  %s🔒 HTTP/HTTPS Security Analysis Tool%s                        %s║%s
+%s║%s  %s📌 Version: %s%s                                               %s║%s
+%s╚═══════════════════════════════════════════════════════════════╝%s
+
+`,
+			colorCyan, colorReset,
+			colorCyan, colorReset, colorBold+colorBlue, colorReset, colorCyan, colorReset,
+			colorCyan, colorReset, colorBold+colorBlue, colorReset, colorCyan, colorReset,
+			colorCyan, colorReset, colorBold+colorBlue, colorReset, colorCyan, colorReset,
+			colorCyan, colorReset, colorBold+colorBlue, colorReset, colorCyan, colorReset,
+			colorCyan, colorReset, colorBold+colorBlue, colorReset, colorCyan, colorReset,
+			colorCyan, colorReset, colorBold+colorBlue, colorReset, colorCyan, colorReset,
+			colorCyan, colorReset, colorCyan, colorReset,
+			colorCyan, colorReset, colorBold+colorMagenta, colorReset, colorCyan, colorReset,
+			colorCyan, colorReset, colorBold+colorMagenta, colorReset, colorCyan, colorReset,
+			colorCyan, colorReset, colorBold+colorMagenta, colorReset, colorCyan, colorReset,
+			colorCyan, colorReset, colorBold+colorMagenta, colorReset, colorCyan, colorReset,
+			colorCyan, colorReset, colorBold+colorMagenta, colorReset, colorCyan, colorReset,
+			colorCyan, colorReset, colorBold+colorMagenta, colorReset, colorCyan, colorReset,
+			colorCyan, colorReset, colorCyan, colorReset,
+			colorCyan, colorReset, colorDim, colorReset, colorCyan, colorReset,
+			colorCyan, colorReset, colorDim, types.Version, colorReset, colorCyan, colorReset,
+			colorCyan, colorReset)
+	}
+}
+
 func printVersion() {
-	fmt.Printf("%s v%s\n", types.AppName, types.Version)
-	fmt.Printf("HTTP/HTTPS Security Analysis Tool\n")
-	fmt.Printf("https://github.com/ismailtasdelen/securetrace\n")
+	if useColors {
+		fmt.Printf("%s%s%s v%s%s\n", colorBold, colorCyan, types.AppName, types.Version, colorReset)
+		fmt.Printf("%s🔒 HTTP/HTTPS Security Analysis Tool%s\n", colorDim, colorReset)
+		fmt.Printf("%s🌐 https://github.com/ismailtasdelen/securetrace%s\n", colorDim, colorReset)
+	} else {
+		fmt.Printf("%s v%s\n", types.AppName, types.Version)
+		fmt.Printf("HTTP/HTTPS Security Analysis Tool\n")
+		fmt.Printf("https://github.com/ismailtasdelen/securetrace\n")
+	}
 }
 
 func printUsage() {
-	fmt.Printf(`%s v%s - HTTP/HTTPS Security Analysis Tool
+	if useColors {
+		fmt.Printf(`%s%s%s v%s%s - HTTP/HTTPS Security Analysis Tool
+
+%s📋 USAGE:%s
+    securetrace [OPTIONS] <URL> [URL...]
+
+%s⚡ COMMANDS:%s
+    version     Print version information
+
+%s🔧 OPTIONS:%s
+    %s-o, --output%s <FORMAT>     Output format: text, json, html, csv (default: text)
+    %s-f, --file%s <PATH>         Write output to file instead of stdout
+    %s-A, --user-agent%s <UA>     User agent string or profile (chrome, firefox, safari, curl, wget)
+    %s-t, --timeout%s <DURATION>  Request timeout (default: 30s)
+    %s-x, --proxy%s <URL>         Proxy URL (http, https, or socks5)
+    %s-c, --concurrency%s <N>     Number of concurrent requests (default: 5)
+    %s-r, --retries%s <N>         Number of retries on failure (default: 3)
+    %s-k, --insecure%s            Skip TLS certificate verification
+    %s--no-redirect%s             Don't follow redirects
+    %s--no-color%s                Disable colored output
+    %s-v, --verbose%s             Enable verbose output
+    %s--config%s <PATH>           Configuration file path
+    %s-h, --help%s                Show this help message
+
+%s📖 EXAMPLES:%s
+    %s# Basic trace%s
+    securetrace https://example.com
+
+    %s# JSON output to file%s
+    securetrace -o json -f report.json https://example.com
+
+    %s# HTML report%s
+    securetrace -o html -f report.html https://example.com
+
+    %s# Multiple URLs with concurrency%s
+    securetrace -c 10 https://site1.com https://site2.com https://site3.com
+
+    %s# Use Chrome user agent with proxy%s
+    securetrace -A chrome -x http://proxy:8080 https://example.com
+
+    %s# Skip certificate verification%s
+    securetrace -k https://self-signed.example.com
+
+%s🔗 For more information: https://github.com/ismailtasdelen/securetrace%s
+`,
+			colorBold, colorCyan, types.AppName, types.Version, colorReset,
+			colorBold+colorGreen, colorReset,
+			colorBold+colorYellow, colorReset,
+			colorBold+colorBlue, colorReset,
+			colorCyan, colorReset,
+			colorCyan, colorReset,
+			colorCyan, colorReset,
+			colorCyan, colorReset,
+			colorCyan, colorReset,
+			colorCyan, colorReset,
+			colorCyan, colorReset,
+			colorCyan, colorReset,
+			colorCyan, colorReset,
+			colorCyan, colorReset,
+			colorCyan, colorReset,
+			colorCyan, colorReset,
+			colorCyan, colorReset,
+			colorBold+colorMagenta, colorReset,
+			colorDim, colorReset,
+			colorDim, colorReset,
+			colorDim, colorReset,
+			colorDim, colorReset,
+			colorDim, colorReset,
+			colorDim, colorReset,
+			colorDim, colorReset)
+	} else {
+		fmt.Printf(`%s v%s - HTTP/HTTPS Security Analysis Tool
 
 USAGE:
     securetrace [OPTIONS] <URL> [URL...]
@@ -297,6 +475,7 @@ EXAMPLES:
 
 For more information: https://github.com/ismailtasdelen/securetrace
 `, types.AppName, types.Version)
+	}
 }
 
 func isTerminal() bool {
@@ -305,4 +484,69 @@ func isTerminal() bool {
 		return false
 	}
 	return (fileInfo.Mode() & os.ModeCharDevice) != 0
+}
+
+func truncateURL(u string, maxLen int) string {
+	if len(u) <= maxLen {
+		return u
+	}
+	return u[:maxLen-3] + "..."
+}
+
+// Spinner provides animated loading indicator
+type Spinner struct {
+	frames   []string
+	message  string
+	running  bool
+	mu       sync.Mutex
+	stopChan chan struct{}
+}
+
+// NewSpinner creates a new spinner
+func NewSpinner(message string) *Spinner {
+	return &Spinner{
+		frames:   []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"},
+		message:  message,
+		stopChan: make(chan struct{}),
+	}
+}
+
+// SetMessage updates the spinner message
+func (s *Spinner) SetMessage(message string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.message = message
+}
+
+// Start begins the spinner animation
+func (s *Spinner) Start() {
+	s.running = true
+	go func() {
+		i := 0
+		for {
+			select {
+			case <-s.stopChan:
+				return
+			default:
+				s.mu.Lock()
+				if useColors {
+					fmt.Printf("\r%s%s%s %s", colorCyan, s.frames[i], colorReset, s.message)
+				} else {
+					fmt.Printf("\r%s %s", s.frames[i], s.message)
+				}
+				s.mu.Unlock()
+				i = (i + 1) % len(s.frames)
+				time.Sleep(80 * time.Millisecond)
+			}
+		}
+	}()
+}
+
+// Stop stops the spinner
+func (s *Spinner) Stop() {
+	if s.running {
+		s.running = false
+		s.stopChan <- struct{}{}
+		fmt.Print("\r\033[K") // Clear the line
+	}
 }
