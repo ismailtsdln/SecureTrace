@@ -1,0 +1,36 @@
+# Compiled binary
+securetrace
+securetrace.exe
+/dist/
+
+# Test artifacts
+*.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependencies (if vendored)
+# vendor/
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.prof
+
+# Output files
+*.json
+*.html
+*.csv
+!docs/**/*.html
