@@ -83,11 +83,6 @@ func (a *CertificateAnalyzer) ValidateChain(certs []*x509.Certificate, hostname 
 		}
 	}
 
-	// Check certificate transparency
-	if len(leaf.SCTList) == 0 {
-		issues = append(issues, "No Signed Certificate Timestamps (SCT) found")
-	}
-
 	return issues
 }
 
