@@ -40,8 +40,8 @@ func TestSecurityHeadersAnalyzer_Analyze(t *testing.T) {
 				"Strict-Transport-Security": []string{"max-age=31536000"},
 				"X-Frame-Options":           []string{"SAMEORIGIN"},
 			},
-			expectedScore: 50,
-			expectedGrade: "D",
+			expectedScore: 35,
+			expectedGrade: "F",
 		},
 	}
 

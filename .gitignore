@@ -1,6 +1,6 @@
 # Compiled binary
-securetrace
-securetrace.exe
+/securetrace
+/securetrace.exe
 /dist/
 
 # Test artifacts

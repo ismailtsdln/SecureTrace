@@ -14,18 +14,18 @@ const (
 
 // TraceResult holds the complete result of an HTTP trace
 type TraceResult struct {
-	URL           string           `json:"url"`
-	FinalURL      string           `json:"final_url"`
-	StatusCode    int              `json:"status_code"`
-	Method        string           `json:"method"`
-	Redirects     []RedirectHop    `json:"redirects,omitempty"`
-	Timeline      Timeline         `json:"timeline"`
-	TLSInfo       *TLSInfo         `json:"tls_info,omitempty"`
-	Headers       http.Header      `json:"headers"`
-	SecurityInfo  SecurityInfo     `json:"security_info"`
-	Body          *BodyInfo        `json:"body,omitempty"`
-	Error         string           `json:"error,omitempty"`
-	Timestamp     time.Time        `json:"timestamp"`
+	URL          string        `json:"url"`
+	FinalURL     string        `json:"final_url"`
+	StatusCode   int           `json:"status_code"`
+	Method       string        `json:"method"`
+	Redirects    []RedirectHop `json:"redirects,omitempty"`
+	Timeline     Timeline      `json:"timeline"`
+	TLSInfo      *TLSInfo      `json:"tls_info,omitempty"`
+	Headers      http.Header   `json:"headers"`
+	SecurityInfo SecurityInfo  `json:"security_info"`
+	Body         *BodyInfo     `json:"body,omitempty"`
+	Error        string        `json:"error,omitempty"`
+	Timestamp    time.Time     `json:"timestamp"`
 }
 
 // RedirectHop represents a single redirect in the chain
@@ -56,6 +56,21 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 	return []byte(`"` + d.Duration.String() + `"`), nil
 }
 
+// UnmarshalJSON implements json.Unmarshaler
+func (d *Duration) UnmarshalJSON(data []byte) error {
+	// Remove quotes
+	s := string(data)
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		s = s[1 : len(s)-1]
+	}
+	dur, err := time.ParseDuration(s)
+	if err != nil {
+		return err
+	}
+	d.Duration = dur
+	return nil
+}
+
 // TLSInfo holds TLS/SSL connection information
 type TLSInfo struct {
 	Version            string            `json:"version"`
@@ -84,7 +99,7 @@ type CertificateInfo struct {
 func NewCertificateInfo(cert *x509.Certificate) CertificateInfo {
 	now := time.Now()
 	daysUntilExpiry := int(cert.NotAfter.Sub(now).Hours() / 24)
-	
+
 	return CertificateInfo{
 		Subject:            cert.Subject.String(),
 		Issuer:             cert.Issuer.String(),
@@ -101,16 +116,16 @@ func NewCertificateInfo(cert *x509.Certificate) CertificateInfo {
 
 // SecurityInfo holds security header analysis results
 type SecurityInfo struct {
-	HSTS               *HSTSInfo     `json:"hsts,omitempty"`
-	ContentSecurityPolicy string     `json:"content_security_policy,omitempty"`
-	XFrameOptions      string        `json:"x_frame_options,omitempty"`
-	XContentTypeOptions string       `json:"x_content_type_options,omitempty"`
-	XXSSProtection     string        `json:"x_xss_protection,omitempty"`
-	ReferrerPolicy     string        `json:"referrer_policy,omitempty"`
-	PermissionsPolicy  string        `json:"permissions_policy,omitempty"`
-	Score              int           `json:"score"`
-	Grade              string        `json:"grade"`
-	Issues             []string      `json:"issues,omitempty"`
+	HSTS                  *HSTSInfo `json:"hsts,omitempty"`
+	ContentSecurityPolicy string    `json:"content_security_policy,omitempty"`
+	XFrameOptions         string    `json:"x_frame_options,omitempty"`
+	XContentTypeOptions   string    `json:"x_content_type_options,omitempty"`
+	XXSSProtection        string    `json:"x_xss_protection,omitempty"`
+	ReferrerPolicy        string    `json:"referrer_policy,omitempty"`
+	PermissionsPolicy     string    `json:"permissions_policy,omitempty"`
+	Score                 int       `json:"score"`
+	Grade                 string    `json:"grade"`
+	Issues                []string  `json:"issues,omitempty"`
 }
 
 // HSTSInfo holds HSTS header information
