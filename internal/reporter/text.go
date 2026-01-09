@@ -27,14 +27,19 @@ func NewTextReporter(colored bool) *TextReporter {
 
 // ANSI color codes
 const (
-	colorReset  = "\033[0m"
-	colorBold   = "\033[1m"
-	colorDim    = "\033[90m"
-	colorRed    = "\033[31m"
-	colorGreen  = "\033[32m"
-	colorYellow = "\033[33m"
-	colorBlue   = "\033[34m"
-	colorCyan   = "\033[36m"
+	colorReset   = "\033[0m"
+	colorBold    = "\033[1m"
+	colorDim     = "\033[2m"
+	colorItalic  = "\033[3m"
+	colorRed     = "\033[31m"
+	colorGreen   = "\033[32m"
+	colorYellow  = "\033[33m"
+	colorBlue    = "\033[34m"
+	colorMagenta = "\033[35m"
+	colorCyan    = "\033[36m"
+	colorWhite   = "\033[37m"
+	colorBgGreen = "\033[42m"
+	colorBgRed   = "\033[41m"
 )
 
 // Format formats a trace result to text
@@ -50,22 +55,16 @@ func (r *TextReporter) FormatScan(result *types.ScanResult) ([]byte, error) {
 
 	// Header
 	r.writeLine(&buf, "")
-	r.writeBanner(&buf, "SecureTrace Scan Report")
+	r.writeScanBanner(&buf)
 	r.writeLine(&buf, "")
 
-	// Summary
-	r.writeSection(&buf, "Summary")
-	r.writeField(&buf, "Targets", fmt.Sprintf("%d", result.Summary.TotalTargets))
-	r.writeField(&buf, "Successful", fmt.Sprintf("%d", result.Summary.Successful))
-	r.writeField(&buf, "Failed", fmt.Sprintf("%d", result.Summary.Failed))
-	r.writeField(&buf, "TLS Enabled", fmt.Sprintf("%d", result.Summary.TLSEnabled))
-	r.writeField(&buf, "With Issues", fmt.Sprintf("%d", result.Summary.SecurityIssues))
-	r.writeField(&buf, "Duration", result.Duration.Duration.String())
+	// Summary Card
+	r.writeSummaryCard(&buf, result)
 	r.writeLine(&buf, "")
 
 	// Individual results
 	for i, res := range result.Results {
-		r.writeLine(&buf, fmt.Sprintf("─── Target %d/%d ───", i+1, len(result.Results)))
+		r.writeDivider(&buf, fmt.Sprintf("Target %d/%d", i+1, len(result.Results)))
 		r.writeResult(&buf, &res)
 		r.writeLine(&buf, "")
 	}
@@ -73,78 +72,274 @@ func (r *TextReporter) FormatScan(result *types.ScanResult) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+func (r *TextReporter) writeScanBanner(w *bytes.Buffer) {
+	if r.colored {
+		w.WriteString(fmt.Sprintf(`
+  %s╔══════════════════════════════════════════════════╗%s
+  %s║%s   %s🔍 SecureTrace Scan Report%s                      %s║%s
+  %s╚══════════════════════════════════════════════════╝%s
+`, colorCyan, colorReset, colorCyan, colorReset, colorBold, colorReset, colorCyan, colorReset, colorCyan, colorReset))
+	} else {
+		w.WriteString(`
+  ╔══════════════════════════════════════════════════╗
+  ║   SecureTrace Scan Report                        ║
+  ╚══════════════════════════════════════════════════╝
+`)
+	}
+}
+
+func (r *TextReporter) writeSummaryCard(w *bytes.Buffer, result *types.ScanResult) {
+	s := result.Summary
+
+	if r.colored {
+		w.WriteString(fmt.Sprintf("  %s📊 Summary%s\n", colorBold+colorBlue, colorReset))
+		w.WriteString(fmt.Sprintf("  %s┌────────────────────────────────────────────────┐%s\n", colorDim, colorReset))
+		w.WriteString(fmt.Sprintf("  %s│%s  🎯 Total Targets:    %s%-25d%s %s│%s\n", colorDim, colorReset, colorBold, s.TotalTargets, colorReset, colorDim, colorReset))
+		w.WriteString(fmt.Sprintf("  %s│%s  %s✓%s  Successful:       %s%-25d%s %s│%s\n", colorDim, colorReset, colorGreen, colorReset, colorGreen, s.Successful, colorReset, colorDim, colorReset))
+		w.WriteString(fmt.Sprintf("  %s│%s  %s✗%s  Failed:           %s%-25d%s %s│%s\n", colorDim, colorReset, colorRed, colorReset, colorRed, s.Failed, colorReset, colorDim, colorReset))
+		w.WriteString(fmt.Sprintf("  %s│%s  🔒 TLS Enabled:      %-25d %s│%s\n", colorDim, colorReset, s.TLSEnabled, colorDim, colorReset))
+		w.WriteString(fmt.Sprintf("  %s│%s  %s⚠%s  Security Issues:  %s%-25d%s %s│%s\n", colorDim, colorReset, colorYellow, colorReset, colorYellow, s.SecurityIssues, colorReset, colorDim, colorReset))
+		w.WriteString(fmt.Sprintf("  %s│%s  ⏱️  Duration:         %-25s %s│%s\n", colorDim, colorReset, result.Duration.Duration.String(), colorDim, colorReset))
+		w.WriteString(fmt.Sprintf("  %s└────────────────────────────────────────────────┘%s\n", colorDim, colorReset))
+	} else {
+		w.WriteString("  Summary\n")
+		w.WriteString("  ┌────────────────────────────────────────────────┐\n")
+		w.WriteString(fmt.Sprintf("  │  Total Targets:    %-25d │\n", s.TotalTargets))
+		w.WriteString(fmt.Sprintf("  │  Successful:       %-25d │\n", s.Successful))
+		w.WriteString(fmt.Sprintf("  │  Failed:           %-25d │\n", s.Failed))
+		w.WriteString(fmt.Sprintf("  │  TLS Enabled:      %-25d │\n", s.TLSEnabled))
+		w.WriteString(fmt.Sprintf("  │  Security Issues:  %-25d │\n", s.SecurityIssues))
+		w.WriteString(fmt.Sprintf("  │  Duration:         %-25s │\n", result.Duration.Duration.String()))
+		w.WriteString("  └────────────────────────────────────────────────┘\n")
+	}
+}
+
+func (r *TextReporter) writeDivider(w *bytes.Buffer, title string) {
+	if r.colored {
+		padding := 50 - len(title) - 6
+		if padding < 0 {
+			padding = 0
+		}
+		w.WriteString(fmt.Sprintf("\n  %s───── %s%s%s %s%s%s\n",
+			colorDim, colorReset, colorBold+colorCyan, title, colorReset, colorDim, strings.Repeat("─", padding)+colorReset))
+	} else {
+		padding := 50 - len(title) - 6
+		if padding < 0 {
+			padding = 0
+		}
+		w.WriteString(fmt.Sprintf("\n  ───── %s %s\n", title, strings.Repeat("─", padding)))
+	}
+}
+
 // writeResult writes a single trace result
 func (r *TextReporter) writeResult(w *bytes.Buffer, result *types.TraceResult) {
-	// URL and status
 	r.writeLine(w, "")
+
+	// URL Card Header
+	statusIcon := r.getStatusIcon(result.StatusCode)
 	statusColor := r.getStatusColor(result.StatusCode)
+
 	if r.colored {
-		r.writeLine(w, fmt.Sprintf("  %s%s%s", colorBold, result.FinalURL, colorReset))
-		r.writeLine(w, fmt.Sprintf("  Status: %s%d%s", statusColor, result.StatusCode, colorReset))
+		w.WriteString(fmt.Sprintf("  %s┌───────────────────────────────────────────────────────────────┐%s\n", colorDim, colorReset))
+		w.WriteString(fmt.Sprintf("  %s│%s %s %s%-58s%s %s│%s\n", colorDim, colorReset, statusIcon, colorBold, truncateStr(result.FinalURL, 58), colorReset, colorDim, colorReset))
+		w.WriteString(fmt.Sprintf("  %s│%s  Status: %s%d%s %s%s%s %s│%s\n", colorDim, colorReset, statusColor+colorBold, result.StatusCode, colorReset, colorDim, strings.Repeat(" ", 47), colorReset, colorDim, colorReset))
+		w.WriteString(fmt.Sprintf("  %s└───────────────────────────────────────────────────────────────┘%s\n", colorDim, colorReset))
 	} else {
-		r.writeLine(w, fmt.Sprintf("  %s", result.FinalURL))
-		r.writeLine(w, fmt.Sprintf("  Status: %d", result.StatusCode))
+		w.WriteString("  ┌───────────────────────────────────────────────────────────────┐\n")
+		w.WriteString(fmt.Sprintf("  │ %s%-60s │\n", statusIcon+" ", truncateStr(result.FinalURL, 58)))
+		w.WriteString(fmt.Sprintf("  │ Status: %-55d │\n", result.StatusCode))
+		w.WriteString("  └───────────────────────────────────────────────────────────────┘\n")
 	}
 
 	// Error if present
 	if result.Error != "" {
 		if r.colored {
-			r.writeLine(w, fmt.Sprintf("  %sError: %s%s", colorRed, result.Error, colorReset))
+			w.WriteString(fmt.Sprintf("\n  %s❌ Error:%s %s%s%s\n", colorRed+colorBold, colorReset, colorRed, result.Error, colorReset))
 		} else {
-			r.writeLine(w, fmt.Sprintf("  Error: %s", result.Error))
+			w.WriteString(fmt.Sprintf("\n  Error: %s\n", result.Error))
 		}
 		return
 	}
 
 	// Redirects
 	if len(result.Redirects) > 0 {
-		w.WriteString(r.formatter.FormatRedirectChain(result.Redirects))
+		r.writeRedirectChain(w, result.Redirects)
 	}
 
 	// Timeline
-	w.WriteString(r.formatter.FormatTimeline(result.Timeline))
+	r.writeTimeline(w, result.Timeline)
 
 	// TLS Info
 	if result.TLSInfo != nil {
-		r.writeLine(w, "")
-		r.writeSection(w, "TLS Security")
-		r.writeGradedField(w, "Grade", result.TLSInfo.Grade)
-		r.writeField(w, "Version", result.TLSInfo.Version)
-		r.writeField(w, "Cipher", result.TLSInfo.CipherSuite)
-		if len(result.TLSInfo.Certificates) > 0 {
-			cert := result.TLSInfo.Certificates[0]
-			r.writeField(w, "Certificate", cert.Subject)
-			r.writeField(w, "Expires", fmt.Sprintf("%s (%d days)",
-				cert.NotAfter.Format("2006-01-02"), cert.DaysUntilExpiry))
-		}
+		r.writeTLSCard(w, result.TLSInfo)
 	}
 
 	// Security Headers
-	r.writeLine(w, "")
-	r.writeSection(w, "Security Headers")
-	r.writeGradedField(w, "Grade", result.SecurityInfo.Grade)
-	r.writeField(w, "Score", fmt.Sprintf("%d/100", result.SecurityInfo.Score))
+	r.writeSecurityCard(w, result.SecurityInfo)
 
-	if len(result.SecurityInfo.Issues) > 0 {
-		r.writeLine(w, "  Issues:")
-		for _, issue := range result.SecurityInfo.Issues {
-			if r.colored {
-				r.writeLine(w, fmt.Sprintf("    %s• %s%s", colorYellow, issue, colorReset))
-			} else {
+	// Body info
+	if result.Body != nil {
+		r.writeBodyInfo(w, result.Body)
+	}
+}
+
+func (r *TextReporter) writeRedirectChain(w *bytes.Buffer, redirects []types.RedirectHop) {
+	r.writeLine(w, "")
+	if r.colored {
+		r.writeLine(w, fmt.Sprintf("  %s🔄 Redirect Chain%s (%d hops)", colorBold+colorYellow, colorReset, len(redirects)))
+	} else {
+		r.writeLine(w, fmt.Sprintf("  Redirect Chain (%d hops)", len(redirects)))
+	}
+
+	for i, hop := range redirects {
+		arrow := "├─"
+		if i == len(redirects)-1 {
+			arrow = "└─"
+		}
+
+		if r.colored {
+			statusColor := r.getStatusColor(hop.StatusCode)
+			r.writeLine(w, fmt.Sprintf("  %s%s%s %s%d%s → %s", colorDim, arrow, colorReset, statusColor, hop.StatusCode, colorReset, truncateStr(hop.URL, 50)))
+		} else {
+			r.writeLine(w, fmt.Sprintf("  %s %d → %s", arrow, hop.StatusCode, truncateStr(hop.URL, 50)))
+		}
+	}
+}
+
+func (r *TextReporter) writeTimeline(w *bytes.Buffer, timeline types.Timeline) {
+	r.writeLine(w, "")
+	if r.colored {
+		r.writeLine(w, fmt.Sprintf("  %s⏱️  Timeline%s", colorBold+colorCyan, colorReset))
+	} else {
+		r.writeLine(w, "  Timeline")
+	}
+
+	phases := []struct {
+		name     string
+		duration time.Duration
+		icon     string
+		color    string
+	}{
+		{"DNS Lookup", timeline.DNSLookup.Duration, "🔍", colorBlue},
+		{"TCP Connect", timeline.TCPConnection.Duration, "🔌", colorYellow},
+		{"TLS Handshake", timeline.TLSHandshake.Duration, "🔒", colorMagenta},
+		{"Server Wait", timeline.ServerProcessing.Duration, "⏳", colorCyan},
+		{"Transfer", timeline.ContentTransfer.Duration, "📥", colorGreen},
+	}
+
+	total := timeline.Total.Duration
+	if total == 0 {
+		for _, p := range phases {
+			total += p.duration
+		}
+	}
+
+	for _, phase := range phases {
+		if phase.duration == 0 {
+			continue
+		}
+
+		ratio := float64(phase.duration) / float64(total)
+		barWidth := int(ratio * 30)
+		if barWidth < 1 && phase.duration > 0 {
+			barWidth = 1
+		}
+
+		bar := strings.Repeat("█", barWidth)
+		padding := strings.Repeat(" ", 30-barWidth)
+
+		if r.colored {
+			r.writeLine(w, fmt.Sprintf("  %s %-14s %s%s%s%s %s",
+				phase.icon, phase.name+":", phase.color, bar, colorReset, padding, formatDurationText(phase.duration)))
+		} else {
+			r.writeLine(w, fmt.Sprintf("  %s %-14s %s%s %s",
+				phase.icon, phase.name+":", bar, padding, formatDurationText(phase.duration)))
+		}
+	}
+
+	// Total
+	if r.colored {
+		r.writeLine(w, fmt.Sprintf("  %s──────────────────────────────────────────────────%s", colorDim, colorReset))
+		r.writeLine(w, fmt.Sprintf("  %s⚡ Total:%s          %s%s%s", colorBold, colorReset, colorBold+colorGreen, formatDurationText(total), colorReset))
+	} else {
+		r.writeLine(w, "  ──────────────────────────────────────────────────")
+		r.writeLine(w, fmt.Sprintf("  Total:           %s", formatDurationText(total)))
+	}
+}
+
+func (r *TextReporter) writeTLSCard(w *bytes.Buffer, tls *types.TLSInfo) {
+	r.writeLine(w, "")
+	gradeColor := r.getGradeColor(tls.Grade)
+	gradeBg := r.getGradeBg(tls.Grade)
+
+	if r.colored {
+		r.writeLine(w, fmt.Sprintf("  %s🔒 TLS Security%s", colorBold+colorMagenta, colorReset))
+		r.writeLine(w, fmt.Sprintf("  ┌─────────────────────────────────────────────────┐"))
+		r.writeLine(w, fmt.Sprintf("  │ Grade: %s %s %s                                     │", gradeBg+colorBold, tls.Grade, colorReset))
+		r.writeLine(w, fmt.Sprintf("  │ %sVersion:%s    %s%-38s%s│", colorDim, colorReset, gradeColor, tls.Version, colorReset))
+		r.writeLine(w, fmt.Sprintf("  │ %sCipher:%s     %-38s │", colorDim, colorReset, truncateStr(tls.CipherSuite, 38)))
+
+		if len(tls.Certificates) > 0 {
+			cert := tls.Certificates[0]
+			expiryColor := colorGreen
+			if cert.DaysUntilExpiry < 30 {
+				expiryColor = colorRed
+			} else if cert.DaysUntilExpiry < 90 {
+				expiryColor = colorYellow
+			}
+			r.writeLine(w, fmt.Sprintf("  │ %sSubject:%s    %-38s │", colorDim, colorReset, truncateStr(cert.Subject, 38)))
+			r.writeLine(w, fmt.Sprintf("  │ %sExpires:%s    %s%s (%d days)%s%s │", colorDim, colorReset, expiryColor, cert.NotAfter.Format("2006-01-02"), cert.DaysUntilExpiry, colorReset, strings.Repeat(" ", 20)))
+		}
+		r.writeLine(w, "  └─────────────────────────────────────────────────┘")
+	} else {
+		r.writeLine(w, "  TLS Security")
+		r.writeLine(w, fmt.Sprintf("  Grade:     %s", tls.Grade))
+		r.writeLine(w, fmt.Sprintf("  Version:   %s", tls.Version))
+		r.writeLine(w, fmt.Sprintf("  Cipher:    %s", tls.CipherSuite))
+	}
+}
+
+func (r *TextReporter) writeSecurityCard(w *bytes.Buffer, sec types.SecurityInfo) {
+	r.writeLine(w, "")
+	gradeColor := r.getGradeColor(sec.Grade)
+	gradeBg := r.getGradeBg(sec.Grade)
+
+	if r.colored {
+		r.writeLine(w, fmt.Sprintf("  %s🛡️  Security Headers%s", colorBold+colorBlue, colorReset))
+		r.writeLine(w, fmt.Sprintf("  ┌─────────────────────────────────────────────────┐"))
+		r.writeLine(w, fmt.Sprintf("  │ Grade: %s %s %s    Score: %s%d/100%s                    │", gradeBg+colorBold, sec.Grade, colorReset, gradeColor, sec.Score, colorReset))
+		r.writeLine(w, "  └─────────────────────────────────────────────────┘")
+
+		if len(sec.Issues) > 0 {
+			r.writeLine(w, fmt.Sprintf("  %s⚠️  Issues Found:%s", colorYellow, colorReset))
+			for _, issue := range sec.Issues {
+				r.writeLine(w, fmt.Sprintf("  %s  • %s%s", colorDim, colorReset+colorYellow, issue+colorReset))
+			}
+		} else {
+			r.writeLine(w, fmt.Sprintf("  %s✓ No security issues found%s", colorGreen, colorReset))
+		}
+	} else {
+		r.writeLine(w, "  Security Headers")
+		r.writeLine(w, fmt.Sprintf("  Grade: %s    Score: %d/100", sec.Grade, sec.Score))
+		if len(sec.Issues) > 0 {
+			r.writeLine(w, "  Issues:")
+			for _, issue := range sec.Issues {
 				r.writeLine(w, fmt.Sprintf("    • %s", issue))
 			}
 		}
 	}
+}
 
-	// Body info
-	if result.Body != nil {
-		r.writeLine(w, "")
-		r.writeSection(w, "Response Body")
-		r.writeField(w, "Size", formatBytes(result.Body.Size))
-		r.writeField(w, "Content-Type", result.Body.ContentType)
-		if result.Body.Encoding != "" {
-			r.writeField(w, "Encoding", result.Body.Encoding)
-		}
+func (r *TextReporter) writeBodyInfo(w *bytes.Buffer, body *types.BodyInfo) {
+	r.writeLine(w, "")
+	if r.colored {
+		r.writeLine(w, fmt.Sprintf("  %s📄 Response Body%s", colorBold+colorCyan, colorReset))
+		r.writeLine(w, fmt.Sprintf("  %sSize:%s        %s", colorDim, colorReset, formatBytes(body.Size)))
+		r.writeLine(w, fmt.Sprintf("  %sContent-Type:%s %s", colorDim, colorReset, body.ContentType))
+	} else {
+		r.writeLine(w, "  Response Body")
+		r.writeLine(w, fmt.Sprintf("  Size:         %s", formatBytes(body.Size)))
+		r.writeLine(w, fmt.Sprintf("  Content-Type: %s", body.ContentType))
 	}
 }
 
@@ -191,6 +386,21 @@ func (r *TextReporter) writeGradedField(w *bytes.Buffer, name, grade string) {
 	}
 }
 
+func (r *TextReporter) getStatusIcon(status int) string {
+	switch {
+	case status >= 200 && status < 300:
+		return "✓"
+	case status >= 300 && status < 400:
+		return "→"
+	case status >= 400 && status < 500:
+		return "✗"
+	case status >= 500:
+		return "⚠"
+	default:
+		return "?"
+	}
+}
+
 func (r *TextReporter) getStatusColor(status int) string {
 	if !r.colored {
 		return ""
@@ -220,6 +430,18 @@ func (r *TextReporter) getGradeColor(grade string) string {
 		return colorYellow
 	default:
 		return colorRed
+	}
+}
+
+func (r *TextReporter) getGradeBg(grade string) string {
+	if !r.colored {
+		return ""
+	}
+	switch grade {
+	case "A+", "A":
+		return colorBgGreen + colorWhite
+	default:
+		return colorBgRed + colorWhite
 	}
 }
 
@@ -276,4 +498,12 @@ func formatDurationText(d time.Duration) string {
 		return fmt.Sprintf("%.2fms", float64(d.Microseconds())/1000)
 	}
 	return fmt.Sprintf("%.2fs", d.Seconds())
+}
+
+// truncateStr truncates a string to maxLen
+func truncateStr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
 }
