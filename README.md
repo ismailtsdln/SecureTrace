@@ -24,7 +24,7 @@
 
 ### Binary Download
 
-Download the latest release for your platform from the [Releases](https://github.com/ismailtasdelen/securetrace/releases) page.
+Download the latest release for your platform from the [Releases](https://github.com/ismailtsdln/SecureTrace/tags) page.
 
 ### Build from Source
 
